@@ -37,6 +37,23 @@ cd platforms/linux
 zig build run
 ```
 
+## Build AppImage
+
+Requires `appimagetool`.
+
+```bash
+cd platforms/linux
+zig build appimage
+```
+
+Output file is written to `zig-out/PortKiller-<arch>.AppImage`.
+
+If `appimagetool` is not in `PATH`, set it explicitly:
+
+```bash
+APPIMAGETOOL=/path/to/appimagetool zig build appimage
+```
+
 ## Notes
 
 - Killing processes may require elevated privileges depending on process owner.

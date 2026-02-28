@@ -9,6 +9,9 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
+    c.g_set_prgname("portkiller-linux");
+    c.g_set_application_name("PortKiller");
+
     var app_state = try AppState.init(allocator);
     defer app_state.deinit();
 

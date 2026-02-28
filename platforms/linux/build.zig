@@ -28,4 +28,10 @@ pub fn build(b: *std.Build) void {
 
     const check = b.step("check", "Build the Linux GTK app");
     check.dependOn(&exe.step);
+
+    const appimage_cmd = b.addSystemCommand(&.{ "bash", "build-appimage.sh" });
+    appimage_cmd.step.dependOn(b.getInstallStep());
+
+    const appimage = b.step("appimage", "Build a Linux AppImage package");
+    appimage.dependOn(&appimage_cmd.step);
 }

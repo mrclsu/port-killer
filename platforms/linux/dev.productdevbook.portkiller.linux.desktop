@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PortKiller
+Comment=Discover listening TCP ports and terminate owning processes
+Exec=portkiller-linux
+Icon=dev.productdevbook.portkiller.linux
+Terminal=false
+Categories=Utility;System;Network;
+StartupNotify=true
+StartupWMClass=dev.productdevbook.portkiller.linux
