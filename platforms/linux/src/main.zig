@@ -278,10 +278,27 @@ fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callconv(
     const refresh_button = c.gtk_button_new_with_label("Refresh");
     c.gtk_box_append(@ptrCast(toolbar), refresh_button);
 
+    const overflow_button = c.gtk_menu_button_new();
+    c.gtk_widget_set_tooltip_text(overflow_button, "More options");
+
+    const overflow_icon = c.gtk_image_new_from_icon_name("open-menu-symbolic");
+    c.gtk_menu_button_set_child(@ptrCast(overflow_button), overflow_icon);
+
+    const overflow_popover = c.gtk_popover_new();
+    const overflow_content = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 8);
+    c.gtk_widget_set_margin_start(overflow_content, 12);
+    c.gtk_widget_set_margin_end(overflow_content, 12);
+    c.gtk_widget_set_margin_top(overflow_content, 12);
+    c.gtk_widget_set_margin_bottom(overflow_content, 12);
+
     const auto_refresh_toggle = c.gtk_check_button_new_with_label("Auto Refresh (5s)");
     app.auto_refresh_toggle = auto_refresh_toggle;
     c.gtk_check_button_set_active(@ptrCast(auto_refresh_toggle), 1);
-    c.gtk_box_append(@ptrCast(toolbar), auto_refresh_toggle);
+    c.gtk_box_append(@ptrCast(overflow_content), auto_refresh_toggle);
+
+    c.gtk_popover_set_child(@ptrCast(overflow_popover), overflow_content);
+    c.gtk_menu_button_set_popover(@ptrCast(overflow_button), overflow_popover);
+    c.gtk_box_append(@ptrCast(toolbar), overflow_button);
 
     const scrolled = c.gtk_scrolled_window_new();
     c.gtk_widget_set_vexpand(scrolled, 1);
