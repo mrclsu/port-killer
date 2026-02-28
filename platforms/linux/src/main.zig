@@ -30,7 +30,7 @@ const AppState = struct {
     fn init(allocator: std.mem.Allocator) !AppState {
         return .{
             .allocator = allocator,
-            .ports = std.ArrayList(PortInfo).init(allocator),
+            .ports = .empty,
             .search_query = try allocator.dupe(u8, ""),
         };
     }
@@ -39,7 +39,7 @@ const AppState = struct {
         for (self.ports.items) |port| {
             self.allocator.free(port.process_name);
         }
-        self.ports.deinit();
+        self.ports.deinit(self.allocator);
         self.allocator.free(self.search_query);
     }
 
@@ -55,7 +55,7 @@ const AppState = struct {
         var lines = std.mem.tokenizeAny(u8, output, "\r\n");
         while (lines.next()) |line| {
             const parsed = parseSsLine(line) orelse continue;
-            try self.ports.append(.{
+            try self.ports.append(self.allocator, .{
                 .port = parsed.port,
                 .pid = parsed.pid,
                 .process_name = try self.allocator.dupe(u8, parsed.process_name),
@@ -214,8 +214,8 @@ fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) ![]u8 {
 
     try child.spawn();
 
-    const stdout = try child.stdout.?.reader().readAllAlloc(allocator, 1_000_000);
-    const stderr = try child.stderr.?.reader().readAllAlloc(allocator, 65_536);
+    const stdout = try child.stdout.?.readToEndAlloc(allocator, 1_000_000);
+    const stderr = try child.stderr.?.readToEndAlloc(allocator, 65_536);
     defer allocator.free(stderr);
 
     const term = try child.wait();
@@ -242,7 +242,7 @@ fn killProcess(pid: i32) !void {
         return error.TerminationFailed;
     }
 
-    std.time.sleep(400 * std.time.ns_per_ms);
+    std.Thread.sleep(400 * std.time.ns_per_ms);
 
     if (c.kill(pid, 0) == 0) {
         if (c.kill(pid, c.SIGKILL) != 0) {
@@ -251,7 +251,7 @@ fn killProcess(pid: i32) !void {
     }
 }
 
-fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callconv(.C) void {
+fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callconv(.c) void {
     const app: *AppState = @ptrCast(@alignCast(user_data orelse return));
 
     const window = c.gtk_application_window_new(application);
@@ -305,7 +305,7 @@ fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callconv(
     c.gtk_window_present(@ptrCast(window));
 }
 
-fn onSearchChanged(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.C) void {
+fn onSearchChanged(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
     const app: *AppState = @ptrCast(@alignCast(user_data orelse return));
     const search_entry = app.search_entry orelse return;
     const text = c.gtk_editable_get_text(@ptrCast(search_entry));
@@ -317,12 +317,12 @@ fn onSearchChanged(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.C) void {
     app.renderList();
 }
 
-fn onRefreshClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.C) void {
+fn onRefreshClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
     const app: *AppState = @ptrCast(@alignCast(user_data orelse return));
     refreshAndRender(app);
 }
 
-fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.C) c_int {
+fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.c) c_int {
     const app: *AppState = @ptrCast(@alignCast(user_data orelse return 0));
     const toggle = app.auto_refresh_toggle orelse return 1;
 
@@ -333,7 +333,7 @@ fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.C) c_int {
     return 1;
 }
 
-fn onKillClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.C) void {
+fn onKillClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
     const kill_data: *KillActionData = @ptrCast(@alignCast(user_data orelse return));
 
     killProcess(kill_data.pid) catch {
@@ -346,7 +346,7 @@ fn onKillClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.C) void {
     refreshAndRender(kill_data.app);
 }
 
-fn destroyKillActionData(data: ?*anyopaque, _: ?*c.GClosure) callconv(.C) void {
+fn destroyKillActionData(data: ?*anyopaque, _: ?*c.GClosure) callconv(.c) void {
     const kill_data: *KillActionData = @ptrCast(@alignCast(data orelse return));
     kill_data.app.allocator.destroy(kill_data);
 }
