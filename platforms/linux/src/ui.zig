@@ -13,7 +13,7 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
 
     const window = c.gtk_application_window_new(application);
     app.window = window;
-    c.gtk_window_set_title(@ptrCast(window), "PortKiller (Linux)");
+    c.gtk_window_set_title(@ptrCast(window), "PortKiller");
     c.gtk_window_set_default_size(@ptrCast(window), 860, 580);
 
     const main_box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 12);
@@ -23,17 +23,20 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
     c.gtk_widget_set_margin_bottom(main_box, 16);
     c.gtk_window_set_child(@ptrCast(window), main_box);
 
-    const toolbar = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 8);
-    c.gtk_box_append(@ptrCast(main_box), toolbar);
+    const header_bar = c.gtk_header_bar_new();
+    c.gtk_header_bar_set_show_title_buttons(@ptrCast(header_bar), 1);
+    c.gtk_window_set_titlebar(@ptrCast(window), header_bar);
+
+    const title_label = c.gtk_label_new("PortKiller");
+    c.gtk_widget_add_css_class(title_label, "heading");
+    c.gtk_header_bar_pack_start(@ptrCast(header_bar), title_label);
 
     const search_entry = c.gtk_search_entry_new();
     app.search_entry = search_entry;
     c.gtk_widget_set_hexpand(search_entry, 1);
     c.gtk_editable_set_text(@ptrCast(search_entry), "");
-    c.gtk_box_append(@ptrCast(toolbar), search_entry);
-
-    const refresh_button = c.gtk_button_new_with_label("Refresh");
-    c.gtk_box_append(@ptrCast(toolbar), refresh_button);
+    c.gtk_widget_set_size_request(search_entry, 320, -1);
+    c.gtk_header_bar_set_title_widget(@ptrCast(header_bar), search_entry);
 
     const overflow_button = c.gtk_menu_button_new();
     c.gtk_widget_set_tooltip_text(overflow_button, "More options");
@@ -48,6 +51,9 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
     c.gtk_widget_set_margin_top(overflow_content, 12);
     c.gtk_widget_set_margin_bottom(overflow_content, 12);
 
+    const refresh_button = c.gtk_button_new_with_label("Refresh");
+    c.gtk_box_append(@ptrCast(overflow_content), refresh_button);
+
     const refresh_elevated_button = c.gtk_button_new_with_label("Refresh (Elevated)");
     c.gtk_widget_set_tooltip_text(refresh_elevated_button, "Run ss with pkexec to load all visible PIDs");
     c.gtk_box_append(@ptrCast(overflow_content), refresh_elevated_button);
@@ -59,7 +65,7 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
 
     c.gtk_popover_set_child(@ptrCast(overflow_popover), overflow_content);
     c.gtk_menu_button_set_popover(@ptrCast(overflow_button), overflow_popover);
-    c.gtk_box_append(@ptrCast(toolbar), overflow_button);
+    c.gtk_header_bar_pack_end(@ptrCast(header_bar), overflow_button);
 
     const scrolled = c.gtk_scrolled_window_new();
     c.gtk_widget_set_vexpand(scrolled, 1);
