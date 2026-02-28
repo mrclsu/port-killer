@@ -48,6 +48,10 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
     c.gtk_widget_set_margin_top(overflow_content, 12);
     c.gtk_widget_set_margin_bottom(overflow_content, 12);
 
+    const refresh_elevated_button = c.gtk_button_new_with_label("Refresh (Elevated)");
+    c.gtk_widget_set_tooltip_text(refresh_elevated_button, "Run ss with pkexec to load all visible PIDs");
+    c.gtk_box_append(@ptrCast(overflow_content), refresh_elevated_button);
+
     const auto_refresh_toggle = c.gtk_check_button_new_with_label("Auto Refresh (5s)");
     app.auto_refresh_toggle = auto_refresh_toggle;
     c.gtk_check_button_set_active(@ptrCast(auto_refresh_toggle), 1);
@@ -72,20 +76,27 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
 
     _ = c.g_signal_connect_data(search_entry, "search-changed", @ptrCast(&onSearchChanged), app, null, 0);
     _ = c.g_signal_connect_data(refresh_button, "clicked", @ptrCast(&onRefreshClicked), app, null, 0);
+    _ = c.g_signal_connect_data(refresh_elevated_button, "clicked", @ptrCast(&onRefreshElevatedClicked), app, null, 0);
 
     _ = c.g_timeout_add_seconds(app.refresh_interval_seconds, @ptrCast(&onAutoRefreshTick), app);
 
-    refreshAndRender(app);
+    refreshAndRender(app, .normal);
     c.gtk_window_present(@ptrCast(window));
 }
 
-fn refreshAndRender(app: *AppState) void {
-    port_manager.refreshPorts(app.allocator, &app.ports) catch {
+fn refreshAndRender(app: *AppState, mode: port_manager.RefreshMode) void {
+    port_manager.refreshPorts(app.allocator, &app.ports, mode) catch {
         if (app.status_label) |status_label| {
-            c.gtk_label_set_text(@ptrCast(status_label), "Failed to scan ports. Ensure 'ss' is installed.");
+            const message = switch (mode) {
+                .normal => "Failed to scan ports. Ensure 'ss' is installed.",
+                .elevated => "Elevated refresh failed. Authorize the admin prompt and verify pkexec is available.",
+            };
+            c.gtk_label_set_text(@ptrCast(status_label), message);
         }
         return;
     };
+
+    app.last_refresh_was_elevated = mode == .elevated;
     renderList(app);
 }
 
@@ -113,14 +124,31 @@ fn renderList(app: *AppState) void {
         c.gtk_widget_set_margin_bottom(row_box, 6);
 
         var label_buf: [256]u8 = undefined;
-        const label_text = std.fmt.bufPrintZ(&label_buf, "Port {d} • {s} (pid {d})", .{ port.port, port.process_name, port.pid }) catch continue;
+        const label_text = if (port.pid >= 0)
+            std.fmt.bufPrintZ(&label_buf, "Port {d} • {s} (pid {d})", .{ port.port, port.process_name, port.pid }) catch continue
+        else
+            std.fmt.bufPrintZ(&label_buf, "Port {d} • {s} (pid unavailable)", .{ port.port, port.process_name }) catch continue;
         const label = c.gtk_label_new(label_text.ptr);
         c.gtk_label_set_xalign(@ptrCast(label), 0.0);
         c.gtk_widget_set_hexpand(label, 1);
 
+        const source_label: ?*c.GtkWidget = if (app.last_refresh_was_elevated)
+            c.gtk_label_new("Elevated")
+        else
+            null;
+        if (source_label) |source| {
+            c.gtk_widget_add_css_class(source, "dim-label");
+        }
+
         var button_buf: [64]u8 = undefined;
-        const button_text = std.fmt.bufPrintZ(&button_buf, "Kill {d}", .{port.port}) catch "Kill";
+        const button_text = if (port.pid >= 0)
+            std.fmt.bufPrintZ(&button_buf, "Kill {d}", .{port.port}) catch "Kill"
+        else
+            "No PID";
         const kill_button = c.gtk_button_new_with_label(button_text.ptr);
+        if (port.pid < 0) {
+            c.gtk_widget_set_sensitive(kill_button, 0);
+        }
 
         const kill_data = app.allocator.create(KillActionData) catch continue;
         kill_data.* = .{ .app = app, .pid = port.pid };
@@ -135,6 +163,9 @@ fn renderList(app: *AppState) void {
         );
 
         c.gtk_box_append(@ptrCast(row_box), label);
+        if (source_label) |source| {
+            c.gtk_box_append(@ptrCast(row_box), source);
+        }
         c.gtk_box_append(@ptrCast(row_box), kill_button);
         c.gtk_list_box_row_set_child(@ptrCast(row), row_box);
         c.gtk_list_box_append(@ptrCast(list_box), row);
@@ -164,7 +195,17 @@ fn onSearchChanged(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
 
 fn onRefreshClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
     const app: *AppState = @ptrCast(@alignCast(user_data orelse return));
-    refreshAndRender(app);
+    refreshAndRender(app, .normal);
+}
+
+fn onRefreshElevatedClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
+    const app: *AppState = @ptrCast(@alignCast(user_data orelse return));
+
+    if (app.auto_refresh_toggle) |toggle| {
+        c.gtk_check_button_set_active(@ptrCast(toggle), 0);
+    }
+
+    refreshAndRender(app, .elevated);
 }
 
 fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.c) c_int {
@@ -172,7 +213,7 @@ fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.c) c_int {
     const toggle = app.auto_refresh_toggle orelse return 1;
 
     if (c.gtk_check_button_get_active(@ptrCast(toggle)) != 0) {
-        refreshAndRender(app);
+        refreshAndRender(app, .normal);
     }
 
     return 1;
@@ -181,14 +222,14 @@ fn onAutoRefreshTick(user_data: ?*anyopaque) callconv(.c) c_int {
 fn onKillClicked(_: ?*c.GtkWidget, user_data: ?*anyopaque) callconv(.c) void {
     const kill_data: *KillActionData = @ptrCast(@alignCast(user_data orelse return));
 
-    port_manager.killProcess(kill_data.pid) catch {
+    port_manager.killProcess(kill_data.app.allocator, kill_data.pid) catch {
         if (kill_data.app.status_label) |status_label| {
-            c.gtk_label_set_text(@ptrCast(status_label), "Failed to kill process. Try running with elevated privileges.");
+            c.gtk_label_set_text(@ptrCast(status_label), "Failed to kill process. Authorize the admin prompt if shown.");
         }
         return;
     };
 
-    refreshAndRender(kill_data.app);
+    refreshAndRender(kill_data.app, .normal);
 }
 
 fn destroyKillActionData(data: ?*anyopaque, _: ?*c.GClosure) callconv(.c) void {

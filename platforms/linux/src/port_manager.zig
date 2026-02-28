@@ -7,16 +7,21 @@ pub const PortInfo = struct {
     process_name: []u8,
 };
 
+pub const RefreshMode = enum {
+    normal,
+    elevated,
+};
+
 const ParsedLine = struct {
     port: u16,
     pid: i32,
     process_name: []const u8,
 };
 
-pub fn refreshPorts(allocator: std.mem.Allocator, ports: *std.ArrayList(PortInfo)) !void {
+pub fn refreshPorts(allocator: std.mem.Allocator, ports: *std.ArrayList(PortInfo), mode: RefreshMode) !void {
     clearPorts(allocator, ports);
 
-    const output = try runCommand(allocator, &.{ "ss", "-ltnpH" });
+    const output = try loadSsOutput(allocator, mode);
     defer allocator.free(output);
 
     var lines = std.mem.tokenizeAny(u8, output, "\r\n");
@@ -36,6 +41,24 @@ pub fn refreshPorts(allocator: std.mem.Allocator, ports: *std.ArrayList(PortInfo
     }.lessThan);
 }
 
+fn loadSsOutput(allocator: std.mem.Allocator, mode: RefreshMode) ![]u8 {
+    return switch (mode) {
+        .normal => runCommand(allocator, &.{ "ss", "-ltnpH" }),
+        .elevated => runElevatedSs(allocator),
+    };
+}
+
+fn runElevatedSs(allocator: std.mem.Allocator) ![]u8 {
+    return runCommand(allocator, &.{ "pkexec", "/usr/bin/ss", "-ltnpH" }) catch |err| switch (err) {
+        error.FileNotFound => error.ElevationUnavailable,
+        error.CommandFailed => runCommand(allocator, &.{ "pkexec", "/bin/ss", "-ltnpH" }) catch |fallback_err| switch (fallback_err) {
+            error.FileNotFound => error.ElevationUnavailable,
+            else => fallback_err,
+        },
+        else => err,
+    };
+}
+
 pub fn clearPorts(allocator: std.mem.Allocator, ports: *std.ArrayList(PortInfo)) void {
     for (ports.items) |port| {
         allocator.free(port.process_name);
@@ -48,18 +71,37 @@ pub fn deinitPorts(allocator: std.mem.Allocator, ports: *std.ArrayList(PortInfo)
     ports.deinit(allocator);
 }
 
-pub fn killProcess(pid: i32) !void {
+pub fn killProcess(allocator: std.mem.Allocator, pid: i32) !void {
     if (c.kill(pid, c.SIGTERM) != 0) {
-        return error.TerminationFailed;
+        try killProcessWithElevation(allocator, pid, c.SIGTERM);
     }
 
     std.Thread.sleep(400 * std.time.ns_per_ms);
 
     if (c.kill(pid, 0) == 0) {
         if (c.kill(pid, c.SIGKILL) != 0) {
-            return error.ForceKillFailed;
+            try killProcessWithElevation(allocator, pid, c.SIGKILL);
         }
     }
+}
+
+fn killProcessWithElevation(allocator: std.mem.Allocator, pid: i32, signal: c_int) !void {
+    const signal_arg = switch (signal) {
+        c.SIGTERM => "-TERM",
+        c.SIGKILL => "-KILL",
+        else => return error.UnsupportedSignal,
+    };
+
+    var pid_buf: [16]u8 = undefined;
+    const pid_text = try std.fmt.bufPrint(&pid_buf, "{d}", .{pid});
+
+    runCommandNoOutput(allocator, &.{ "pkexec", "/usr/bin/kill", signal_arg, pid_text }) catch |err| switch (err) {
+        error.FileNotFound => return error.ElevationUnavailable,
+        error.CommandFailed => {
+            try runCommandNoOutput(allocator, &.{ "pkexec", "/bin/kill", signal_arg, pid_text });
+        },
+        else => return err,
+    };
 }
 
 fn parseSsLine(line: []const u8) ?ParsedLine {
@@ -82,8 +124,8 @@ fn parseSsLine(line: []const u8) ?ParsedLine {
     const address = local_address orelse return null;
     const port = parsePort(address) orelse return null;
 
-    const process_text = process_field orelse return null;
-    const pid = extractNumberAfter(process_text, "pid=") orelse return null;
+    const process_text = process_field orelse "";
+    const pid = extractNumberAfter(process_text, "pid=") orelse -1;
     const process_name = extractProcessName(process_text) orelse "unknown";
 
     return .{ .port = port, .pid = pid, .process_name = process_name };
@@ -129,4 +171,17 @@ fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) ![]u8 {
     }
 
     return stdout;
+}
+
+fn runCommandNoOutput(allocator: std.mem.Allocator, argv: []const []const u8) !void {
+    var child = std.process.Child.init(argv, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+
+    try child.spawn();
+
+    const term = try child.wait();
+    if (term != .Exited or term.Exited != 0) {
+        return error.CommandFailed;
+    }
 }

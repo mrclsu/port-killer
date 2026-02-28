@@ -12,6 +12,7 @@ pub const AppState = struct {
     ports: std.ArrayList(port_manager.PortInfo),
     search_query: []u8,
     refresh_interval_seconds: u32 = 5,
+    last_refresh_was_elevated: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !AppState {
         return .{
