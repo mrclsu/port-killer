@@ -24,6 +24,7 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
     c.gtk_window_set_child(@ptrCast(window), main_box);
 
     const header_bar = c.gtk_header_bar_new();
+    c.gtk_widget_add_css_class(header_bar, "flat");
     c.gtk_header_bar_set_show_title_buttons(@ptrCast(header_bar), 1);
     c.gtk_window_set_titlebar(@ptrCast(window), header_bar);
 
@@ -58,11 +59,6 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
     c.gtk_widget_set_tooltip_text(refresh_elevated_button, "Run ss with pkexec to load all visible PIDs");
     c.gtk_box_append(@ptrCast(overflow_content), refresh_elevated_button);
 
-    const auto_refresh_toggle = c.gtk_check_button_new_with_label("Auto Refresh (5s)");
-    app.auto_refresh_toggle = auto_refresh_toggle;
-    c.gtk_check_button_set_active(@ptrCast(auto_refresh_toggle), 1);
-    c.gtk_box_append(@ptrCast(overflow_content), auto_refresh_toggle);
-
     c.gtk_popover_set_child(@ptrCast(overflow_popover), overflow_content);
     c.gtk_menu_button_set_popover(@ptrCast(overflow_button), overflow_popover);
     c.gtk_header_bar_pack_end(@ptrCast(header_bar), overflow_button);
@@ -73,12 +69,23 @@ pub fn onActivate(application: ?*c.GtkApplication, user_data: ?*anyopaque) callc
 
     const list_box = c.gtk_list_box_new();
     app.list_box = list_box;
+    c.gtk_list_box_set_selection_mode(@ptrCast(list_box), c.GTK_SELECTION_NONE);
     c.gtk_scrolled_window_set_child(@ptrCast(scrolled), list_box);
+
+    const footer = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 12);
+    c.gtk_box_append(@ptrCast(main_box), footer);
 
     const status_label = c.gtk_label_new("Scanning...");
     app.status_label = status_label;
     c.gtk_label_set_xalign(@ptrCast(status_label), 0.0);
-    c.gtk_box_append(@ptrCast(main_box), status_label);
+    c.gtk_widget_set_hexpand(status_label, 1);
+    c.gtk_box_append(@ptrCast(footer), status_label);
+
+    const auto_refresh_toggle = c.gtk_check_button_new_with_label("Auto Refresh (5s)");
+    app.auto_refresh_toggle = auto_refresh_toggle;
+    c.gtk_check_button_set_active(@ptrCast(auto_refresh_toggle), 1);
+    c.gtk_widget_set_halign(auto_refresh_toggle, c.GTK_ALIGN_END);
+    c.gtk_box_append(@ptrCast(footer), auto_refresh_toggle);
 
     _ = c.g_signal_connect_data(search_entry, "search-changed", @ptrCast(&onSearchChanged), app, null, 0);
     _ = c.g_signal_connect_data(refresh_button, "clicked", @ptrCast(&onRefreshClicked), app, null, 0);
