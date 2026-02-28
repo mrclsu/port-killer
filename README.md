@@ -8,6 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.0%2B-brightgreen" alt="macOS"></a>
   <a href="https://www.microsoft.com/windows"><img src="https://img.shields.io/badge/Windows-10%2B-0078D6" alt="Windows"></a>
+  <a href="https://www.kernel.org/"><img src="https://img.shields.io/badge/Linux-GTK4-2E3440" alt="Linux"></a>
   <a href="https://github.com/productdevbook/port-killer/releases"><img src="https://img.shields.io/github/v/release/productdevbook/port-killer" alt="GitHub Release"></a>
 </p>
 
@@ -43,6 +44,10 @@ brew install --cask productdevbook/tap/portkiller
 
 Download `.zip` from [GitHub Releases](https://github.com/productdevbook/port-killer/releases) and extract.
 
+### Linux
+
+Build from source in [`platforms/linux`](platforms/linux/README.md).
+
 ## Features
 
 ### Port Management
@@ -68,6 +73,9 @@ Download `.zip` from [GitHub Releases](https://github.com/productdevbook/port-ki
 - 📍 Menu bar integration (macOS)
 - 🖥️ System tray app (Windows)
 - 🎨 Native UI for each platform
+  - macOS: SwiftUI
+  - Windows: WinUI 3
+  - Linux: GTK4 (Zig)
 
 ## Contributing
 
